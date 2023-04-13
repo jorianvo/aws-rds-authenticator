@@ -7,10 +7,9 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
+# TODO: explain we have to run on push, not on pull_request as that prevents semantic-release from working
 on:
   push:
-    branches: [ "main" ]
-  pull_request:    
 
 jobs:
   format:
@@ -115,6 +114,37 @@ jobs:
           version: "2023.1.3"
           install-go: false
 
+  version:
+    runs-on: ubuntu-latest
+    # Map a step output to a job output, see:
+    # https://stackoverflow.com/a/61236803
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "lts/*"
+      - name: Install dependencies
+        run: |
+          npm i -g \
+            semantic-release \
+            @semantic-release/changelog \
+            @semantic-release/exec \
+            @semantic-release/git \
+            @semantic-release/gitlab
+      - name: Get latest version
+        id: version
+        run: |
+          semantic-release --dry-run --branches main,${{ github.ref_name }} --no-ci --debug
+          cat version.env >> $GITHUB_OUTPUT
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Debug
+        run: cat version.env
+
   test:
     runs-on: ubuntu-latest
     steps:
@@ -156,6 +186,7 @@ jobs:
       - goimports
       - tidy
       - staticcheck
+      - version
       - test
     strategy:
       matrix:
@@ -185,7 +216,7 @@ jobs:
           tags: |
             # set latest tag for default branch
             type=raw,value=latest${{ fromJSON(format('["-{0}",""]', matrix.target))[matrix.target == 'scratch'] }},enable={{is_default_branch}}
-            type=raw,value=1.0.0${{ fromJSON(format('["-{0}",""]', matrix.target))[matrix.target == 'scratch'] }}
+            type=raw,value=${{ needs.version.outputs.version }}${{ fromJSON(format('["-{0}",""]', {{branch}}))[{{is_default_branch}}] }}${{ fromJSON(format('["-{0}",""]', matrix.target))[matrix.target == 'scratch'] }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
@@ -205,6 +236,7 @@ jobs:
       packages: write
     needs:
       - docker-build
+      - version
     strategy:
       matrix:
         target: ["postgres", "mysql"]
@@ -233,7 +265,7 @@ jobs:
           tags: |
             # set latest tag for default branch
             type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=1.0.0
+            type=raw,value=${{ needs.version.outputs.version }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
