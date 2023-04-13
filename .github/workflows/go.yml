@@ -142,8 +142,6 @@ jobs:
           cat version.env >> $GITHUB_OUTPUT
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Debug
-        run: cat version.env
 
   test:
     runs-on: ubuntu-latest
@@ -213,10 +211,20 @@ jobs:
         uses: docker/metadata-action@v4
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # We will create a latest tag by default, and will add the suffix to latest as well, the `onlatest=true`.
+          # See: https://github.com/marketplace/actions/docker-metadata-action#flavor-input.
+          flavor: |
+            # Configure the global suffix
+            suffix=${{ fromJSON(format('["-{0}",""]', matrix.target))[matrix.target == 'scratch'] }},onlatest=true
+          # Configure a tag of type semver, by default this would get the tag value from git, but as
+          # we haven't created a release yet, we specify the value explicitly.
+          # See: https://github.com/marketplace/actions/docker-metadata-action#typesemver.
+          # Note that for branch builds, we add the branch name in the tag as well, to avoid overwriting images.
+          # And we can't negate the `{{is_default_branch}}` expression, so we have to perform the "not default branch"
+          # check explicitly.
           tags: |
-            # set latest tag for default branch
-            type=raw,value=latest${{ fromJSON(format('["-{0}",""]', matrix.target))[matrix.target == 'scratch'] }},enable={{is_default_branch}}
-            type=raw,value=${{ needs.version.outputs.version }}${{ fromJSON(format('["-{0}",""]', {{branch}}))[{{is_default_branch}}] }}${{ fromJSON(format('["-{0}",""]', matrix.target))[matrix.target == 'scratch'] }}
+            type=semver,pattern={{version}},value=${{ needs.version.outputs.version }},enable={{is_default_branch}}
+            type=semver,pattern={{version}},value=${{ needs.version.outputs.version }}-{{branch}},enable=${{ github.ref_name != github.event.repository.default_branch }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
@@ -262,10 +270,15 @@ jobs:
         uses: docker/metadata-action@v4
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.target }}
+          # Configure a tag of type semver, by default this would get the tag value from git, but as
+          # we haven't created a release yet, we specify the value explicitly.
+          # See: https://github.com/marketplace/actions/docker-metadata-action#typesemver.
+          # Note that for branch builds, we add the branch name in the tag as well, to avoid overwriting images.
+          # And we can't negate the `{{is_default_branch}}` expression, so we have to perform the "not default branch"
+          # check explicitly.
           tags: |
-            # set latest tag for default branch
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=${{ needs.version.outputs.version }}
+            type=semver,pattern={{version}},value=${{ needs.version.outputs.version }},enable={{is_default_branch}}
+            type=semver,pattern={{version}},value=${{ needs.version.outputs.version }}-{{branch}},enable=${{ github.ref_name != github.event.repository.default_branch }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
