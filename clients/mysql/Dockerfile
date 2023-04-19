@@ -1,5 +1,5 @@
 ARG VERSION=latest
-FROM ghcr.io/founda/aws-rds-authenticator:$VERSION-alpine AS aws-rds-authenticator
+FROM ghcr.io/jorianvo/aws-rds-authenticator:$VERSION-alpine AS aws-rds-authenticator
 
 FROM alpine:3.17
 RUN apk --no-cache add mysql-client

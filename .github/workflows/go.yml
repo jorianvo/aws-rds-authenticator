@@ -70,7 +70,7 @@ jobs:
         run: |
           go install golang.org/x/tools/cmd/goimports@latest
           test -z "$(goimports -local founda.com -l .)"
-          
+
   tidy:
     runs-on: ubuntu-latest
     steps:
@@ -116,6 +116,10 @@ jobs:
 
   version:
     runs-on: ubuntu-latest
+    # Semantic-release verifies it can push to the repo, even in
+    # dry-run mode. So we set the permissions accordingly
+    permissions:
+      contents: write
     # Map a step output to a job output, see:
     # https://stackoverflow.com/a/61236803
     outputs:
@@ -133,8 +137,7 @@ jobs:
             semantic-release \
             @semantic-release/changelog \
             @semantic-release/exec \
-            @semantic-release/git \
-            @semantic-release/gitlab
+            @semantic-release/git
       - name: Get latest version
         id: version
         run: |
@@ -145,33 +148,37 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    # Test Report needs to be able to update checks, see:
+    # https://github.com/mikepenz/action-junit-report#pr-run-permissions
+    permissions:
+      checks: write
     steps:
-    - uses: actions/checkout@v3
-      with:
-        fetch-depth: 1
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 1
 
-    # Use the go version as specified in the go.mod, using the latest available
-    # patch release, see:
-    # https://github.com/actions/setup-go#getting-go-version-from-the-gomod-file
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version-file: "./go.mod"
-        cache-dependency-path: go.sum
+      # Use the go version as specified in the go.mod, using the latest available
+      # patch release, see:
+      # https://github.com/actions/setup-go#getting-go-version-from-the-gomod-file
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version-file: "./go.mod"
+          cache-dependency-path: go.sum
 
-    - name: Install dependencies
-      run: go get .
+      - name: Install dependencies
+        run: go get .
 
-    - name: Test with Go
-      run: |
-        go install github.com/jstemmer/go-junit-report/v2@latest
-        go test -v ./... | go-junit-report -iocopy -out report.xml -set-exit-code
+      - name: Test with Go
+        run: |
+          go install github.com/jstemmer/go-junit-report/v2@latest
+          go test -v ./... | go-junit-report -iocopy -out report.xml -set-exit-code
 
-    - name: Publish Test Report
-      uses: mikepenz/action-junit-report@v3
-      if: always()
-      with:
-        report_paths: report.xml
+      - name: Publish Test Report
+        uses: mikepenz/action-junit-report@v3
+        if: always()
+        with:
+          report_paths: report.xml
 
   docker-build:
     runs-on: ubuntu-latest
@@ -247,7 +254,7 @@ jobs:
       - version
     strategy:
       matrix:
-        target: ["postgres", "mysql"]
+        target: [ "postgres", "mysql" ]
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -285,8 +292,39 @@ jobs:
         with:
           context: ./clients/${{ matrix.target }}
           platforms: linux/amd64,linux/arm64
-          build-args: VERSION=1.0.0
+          build-args: VERSION=${{ needs.version.outputs.version }}${{ fromJSON(format('["-{0}",""]', github.ref_name))[github.ref_name == github.event.repository.default_branch] }}
           push: true
           provenance: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+  release:
+    runs-on: ubuntu-latest
+    # Semantic-release need the following permissions:
+    # - content:write in order to create releases
+    # - issues:write in order to post issue comments and add labels
+    # - pull_requests:write to post PR comments and add labels
+    # see: https://github.com/semantic-release/semantic-release/issues/2469#issuecomment-1158013884
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    if: github.ref_name == github.event.repository.default_branch
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "lts/*"
+      - name: Install dependencies
+        run: |
+          npm i -g \
+            semantic-release \
+            @semantic-release/changelog \
+            @semantic-release/exec \
+            @semantic-release/git
+      - name: Release new version
+        run: semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
