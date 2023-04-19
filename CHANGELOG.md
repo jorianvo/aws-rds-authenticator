@@ -1,3 +1,10 @@
+## [1.0.1](https://github.com/jorianvo/aws-rds-authenticator/compare/v1.0.0...v1.0.1) (2023-04-19)
+
+
+### Bug Fixes
+
+* release after client images are published ([ccb39b3](https://github.com/jorianvo/aws-rds-authenticator/commit/ccb39b342a1be1a72f09a4310d01221acfb13310))
+
 # 1.0.0 (2023-04-19)
 
 
